@@ -13,4 +13,4 @@
 CREATE FUNCTION encrypt RETURNS STRING SONAME "myudf.dll";
 CREATE FUNCTION decrypt RETURNS STRING SONAME "myudf.dll";
 ```
-
+⚠⚠⚠加解密的实现需要电脑插入U盘，并且U盘根目录中存在key.key密钥文件
