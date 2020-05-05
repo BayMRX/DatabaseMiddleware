@@ -19,6 +19,8 @@ class MyMainForm(QMainWindow, Ui_MainWindow):
         self.statusbar.showMessage(' MySQL未连接')  # 主界面底部状态栏
         self.db_comboBox.activated.connect(self.db_change)
         self.tb_comboBox.activated.connect(self.tb_change)
+        self.move2left_pushButton.clicked.connect(self.move2left)
+        self.move2right_pushButton.clicked.connect(self.move2right)
 
     def openForm(self):  # 点登陆按钮 打开登录框
         global cursor
@@ -71,16 +73,15 @@ class MyMainForm(QMainWindow, Ui_MainWindow):
         self.left_tableWidget.setRowCount(0)
         self.right_tableWidget.setRowCount(0)
         # 暂时禁用排序，防止向列表中添加时出错
-        QTableView.setSortingEnabled(self.left_tableWidget, False)
-        QTableView.setSortingEnabled(self.right_tableWidget, False)
+        self.disableSort()
         left_row = right_row = 0
         for val in res:
             # 若注释为空，则添加到左边列表中
             if val[8] == '':
                 left_row += 1
                 self.left_tableWidget.setRowCount(left_row)
-                self.left_tableWidget.setItem(left_row-1, 0, QTableWidgetItem(val[0]))
-                self.left_tableWidget.setItem(left_row-1, 1, QTableWidgetItem(val[1]))
+                self.left_tableWidget.setItem(left_row - 1, 0, QTableWidgetItem(val[0]))
+                self.left_tableWidget.setItem(left_row - 1, 1, QTableWidgetItem(val[1]))
                 # sql = "ALTER TABLE " + cur_tb + " MODIFY COLUMN " + val[0] + " " + val[1] + " COMMENT '" + val[1] + "'"
                 # cursor.execute(sql)
             else:
@@ -89,18 +90,60 @@ class MyMainForm(QMainWindow, Ui_MainWindow):
                 if comm[0] == "en":
                     right_row += 1
                     self.right_tableWidget.setRowCount(right_row)
-                    self.right_tableWidget.setItem(right_row-1, 0, QTableWidgetItem(val[0]))
-                    self.right_tableWidget.setItem(right_row-1, 1, QTableWidgetItem(comm[1]))
+                    self.right_tableWidget.setItem(right_row - 1, 0, QTableWidgetItem(val[0]))
+                    self.right_tableWidget.setItem(right_row - 1, 1, QTableWidgetItem(comm[1]))
                 else:
                     left_row += 1
                     self.left_tableWidget.setRowCount(left_row)
-                    self.left_tableWidget.setItem(left_row-1, 0, QTableWidgetItem(val[0]))
-                    self.left_tableWidget.setItem(left_row-1, 1, QTableWidgetItem(val[1]))
-        db.commit()
+                    self.left_tableWidget.setItem(left_row - 1, 0, QTableWidgetItem(val[0]))
+                    self.left_tableWidget.setItem(left_row - 1, 1, QTableWidgetItem(val[1]))
+        self.enableSort()
+
+    def disableSort(self):
+        QTableView.setSortingEnabled(self.left_tableWidget, False)
+        QTableView.setSortingEnabled(self.right_tableWidget, False)
+
+    def enableSort(self):
         QTableView.setSortingEnabled(self.left_tableWidget, True)
         QTableView.setSortingEnabled(self.right_tableWidget, True)
         QTableWidget.resizeRowsToContents(self.left_tableWidget)
         QTableWidget.resizeRowsToContents(self.right_tableWidget)
+
+    # 右边属性列表中的元素添加到左边
+    def move2left(self):
+        val = self.right_tableWidget.selectedItems()
+        index = self.right_tableWidget.selectedIndexes()
+        left_rowCount = self.left_tableWidget.rowCount()
+        del_li = []
+        self.disableSort()
+        for i in range(0, len(val), 2):
+            left_rowCount += 1
+            self.left_tableWidget.setRowCount(left_rowCount)
+            self.left_tableWidget.setItem(left_rowCount - 1, 0, QTableWidgetItem(val[i].text()))
+            self.left_tableWidget.setItem(left_rowCount - 1, 1, QTableWidgetItem(val[i + 1].text()))
+            del_li.append(index[i].row())
+        del_li.sort(reverse=True)
+        for i in del_li:
+            self.right_tableWidget.removeRow(i)
+        self.enableSort()
+
+    # 左边属性列表中的元素添加到右边
+    def move2right(self):
+        val = self.left_tableWidget.selectedItems()
+        index = self.left_tableWidget.selectedIndexes()
+        right_rowCount = self.right_tableWidget.rowCount()
+        del_li = []
+        self.disableSort()
+        for i in range(0, len(val), 2):
+            right_rowCount += 1
+            self.right_tableWidget.setRowCount(right_rowCount)
+            self.right_tableWidget.setItem(right_rowCount - 1, 0, QTableWidgetItem(val[i].text()))
+            self.right_tableWidget.setItem(right_rowCount - 1, 1, QTableWidgetItem(val[i + 1].text()))
+            del_li.append(index[i].row())
+        del_li.sort(reverse=True)
+        for i in del_li:
+            self.left_tableWidget.removeRow(i)
+        self.enableSort()
 
 
 # 数据库登录窗口类
