@@ -1,7 +1,7 @@
 # DatabaseMiddleware
 ### MySQL数据库加解密插件安装
 
-加解密项目源码在`EncryptionPlugin`文件夹中
+加解密项目源码在`EncryptionPlugin`文件夹中（也可以直接使用git仓库中的dll文件）
 
 1.使用Visual Studio打开sln项目文件，对项目进行编译生成，默认在`x64\Debug`文件夹下会生成myudf.dll文件。
 
