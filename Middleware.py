@@ -365,7 +365,7 @@ class data_operate(QThread):
                 sql2 += ","
             flag = 1
             if val in encrypt_list:
-                sql2 += "CONVERT(decrypt(CONVERT(" + val + ",CHAR)) USING utf8) " + val
+                sql2 += "CONVERT(decrypt(CONVERT(" + val + ",CHAR)) USING ascii) " + val
             else:
                 sql2 += val
         sql2 += " FROM " + cur_tb + ";"
