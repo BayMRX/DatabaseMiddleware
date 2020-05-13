@@ -1,5 +1,12 @@
 # DatabaseMiddleware
-### MySQL数据库加解密插件安装
+## 使用说明
+
+[下载](https://github.com/BayMRX/DatabaseMiddleware/releases)压缩包，解压后直接运行即可。
+
+⚠注：首次运行需要使用管理员权限打开程序，程序会自动将加解密插件安装到MySQL中，否则程序将无法运行！
+
+## 源码编译
+### MySQL数据库加解密插件手动安装
 
 加解密项目源码在`EncryptionPlugin`文件夹中（也可以直接使用git仓库中的dll文件）
 
