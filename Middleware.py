@@ -1,7 +1,7 @@
 import sys
 import pymysql
 import os
-from time import sleep
+from time import sleep, time
 from psutil import disk_partitions
 from UI_Middleware import Ui_MainWindow
 from database_login import Ui_Login_Form
@@ -12,6 +12,7 @@ from PyQt5.QtGui import *
 db = cursor = cur_tb = db_status = None
 username = hostname = password = None
 ukey_status = 0
+fin_flag = 0
 encrypted = []
 no_encrypted = []
 attr_list = []
@@ -187,124 +188,24 @@ class MyMainForm(QMainWindow, Ui_MainWindow):
             if not ukey_status:
                 QMessageBox.warning(self, "Warning!", "请先插入UKey！")
             else:
-                # 创建加解密函数
-                sql1 = "DROP FUNCTION IF EXISTS encrypt;"
-                sql2 = "DROP FUNCTION IF EXISTS decrypt;"
-                sql3 = "CREATE FUNCTION encrypt RETURNS STRING SONAME \"myudf.dll\";"
-                sql4 = "CREATE FUNCTION decrypt RETURNS STRING SONAME \"myudf.dll\";"
-                try:
-                    cursor.execute(sql1)
-                    cursor.execute(sql2)
-                    cursor.execute(sql3)
-                    cursor.execute(sql4)
-                except Exception as e:
-                    db.rollback()
-                    QMessageBox.critical(self,"ERROR",str(e))
-                else:
-                    db.commit()
-                # print("加解密函数\n", sql)
+                self.progressBar.setValue(0)
                 left_rows = self.left_tableWidget.rowCount()
                 right_rows = self.right_tableWidget.rowCount()
-                # 读取表格上的数据，执行加解密操作
-                # 对新添加到左边表格的数据进行解密
+                left_items = []
                 for i in range(left_rows):
                     name_ = self.left_tableWidget.item(i, 0).text()
                     type_ = self.left_tableWidget.item(i, 1).text()
-                    if name_ not in no_encrypted:
-                        name_new = name_ + "_NEW"
-                        sql1 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_new + " " + type_ + " AFTER " + name_ + ";\n"
-                        sql2 = "UPDATE " + cur_tb + " SET " + name_new + "=decrypt(CONVERT(" + name_ + ",CHAR));\n"
-                        sql3 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_ + ";\n"
-                        sql4 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_new + " " + name_ + " " + type_ + ";\n"
-                        # print("解密\n", sql)
-                        try:
-                            cursor.execute(sql1)
-                            cursor.execute(sql2)
-                            cursor.execute(sql3)
-                            cursor.execute(sql4)
-                        except Exception as e:
-                            db.rollback()
-                            QMessageBox.critical(self, "ERROR", str(e))
-                        else:
-                            db.commit()
-                # 对新添加到右边表格的数据进行加密并添加触发器
-                encrypt_list = []
-                sql1 = "DROP TRIGGER IF EXISTS insert_data;"
-                sql2 = "DROP TRIGGER IF EXISTS update_data;"
-                try:
-                    cursor.execute(sql1)
-                    cursor.execute(sql2)
-                except Exception as e:
-                    db.rollback()
-                    QMessageBox.critical(self, "ERROR", str(e))
-                else:
-                    db.commit()
-                insert_trigger = "CREATE TRIGGER insert_data\n"
-                insert_trigger += "BEFORE INSERT ON " + cur_tb + " FOR EACH ROW BEGIN\n"
-                update_trigger = "CREATE TRIGGER update_data\n"
-                update_trigger += "BEFORE UPDATE ON " + cur_tb + " FOR EACH ROW BEGIN\n"
+                    left_items.append([name_, type_])
+                right_items = []
                 for i in range(right_rows):
                     name_ = self.right_tableWidget.item(i, 0).text()
                     type_ = self.right_tableWidget.item(i, 1).text()
-                    encrypt_list.append(name_)
-                    if name_ not in encrypted:
-                        # encrypt this attr
-                        name_old = name_ + "_OLD"
-                        sql1 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_ +" "+name_old +" "+type_ + ";"
-                        sql2 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci AFTER " + name_old + ";"
-                        sql3 = "ALTER TABLE " + cur_tb + " MODIFY COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci COMMENT 'en," + type_ + "';"
-                        sql4 = "UPDATE " + cur_tb + " SET " + name_ + "=encrypt(CONVERT(" + name_old + ",CHAR));"
-                        sql5 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_old + ";"
-                        # print("加密\n", sql)
-                        try:
-                            cursor.execute(sql1)
-                            cursor.execute(sql2)
-                            cursor.execute(sql3)
-                            cursor.execute(sql4)
-                            cursor.execute(sql5)
-                        except Exception as e:
-                            db.rollback()
-                            QMessageBox.critical(self, "ERROR", str(e))
-                        else:
-                            db.commit()
-                    # 添加触发器语句
-                    insert_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\n"
-                    update_trigger += "IF (OLD." + name_ + " != NEW." + name_ + ") THEN\n"
-                    update_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\nEND IF;\n"
-                insert_trigger += "END"
-                update_trigger += "END"
-                # print("触发器\n", sql)
-                try:
-                    cursor.execute(insert_trigger)
-                    cursor.execute(update_trigger)
-                except Exception as e:
-                    db.rollback()
-                    QMessageBox.critical(self, "ERROR", str(e))
-                else:
-                    db.commit()
-                # 创建视图
-                sql1 = "DROP VIEW IF EXISTS `" + cur_tb + "_view`;"
-                sql2 = "CREATE VIEW " + cur_tb + "_view AS\n SELECT "
-                flag = 0
-                for val in attr_list:
-                    if flag:
-                        sql2 += ","
-                    flag = 1
-                    if val in encrypt_list:
-                        sql2 += "CONVERT(decrypt(CONVERT(" + val + ",CHAR)) USING utf8) " + val
-                    else:
-                        sql2 += val
-                sql2 += " FROM " + cur_tb + ";"
-                # print("视图\n", sql)
-                try:
-                    cursor.execute(sql1)
-                    cursor.execute(sql2)
-                except Exception as e:
-                    db.rollback()
-                    QMessageBox.critical(self, "ERROR", str(e))
-                else:
-                    db.commit()
-            self.refresh_table()
+                    right_items.append([name_, type_])
+                self.data_op = data_operate(left_items, right_items)
+                self.data_op.pb_signal.connect(self.update_pb)
+                self.data_op.err_signal.connect(self.err_info)
+                self.data_op.fin_signal.connect(self.finishDialog)
+                self.data_op.start()
 
     def detect_ukey(self):
         self.detect = existUkey()
@@ -316,6 +217,201 @@ class MyMainForm(QMainWindow, Ui_MainWindow):
             self.statusbar.showMessage(' MySQL已连接| UKey已插入')
         else:
             self.statusbar.showMessage(' MySQL已连接| 未检测到UKey')
+
+    def update_pb(self, pb_val):
+        self.progressBar.setValue(pb_val*100)
+        # print("process:",pb_val)
+
+    def err_info(self, info):
+        QMessageBox.critical(self, 'ERROR', info)
+        # self.widget.setEnabled(True)
+
+    def finishDialog(self, info):
+        QMessageBox.information(self, 'Done', info, QMessageBox.Ok, QMessageBox.Ok)
+        self.refresh_table()
+        # self.widget.setEnabled(True)  # 水印添加完成后恢复所有组件状态
+
+
+class data_operate(QThread):
+    pb_signal = pyqtSignal(float)
+    err_signal = pyqtSignal(str)
+    fin_signal = pyqtSignal(str)
+
+    def __init__(self, left_items, right_items):
+        super(data_operate, self).__init__()
+        self.left_items = left_items
+        self.right_items = right_items
+
+    def run(self):
+        global cur_tb, cursor, db, encrypted, no_encrypted, attr_list, fin_flag
+
+        # 计算所需要加解密的属性数量和被操作的记录数量，以便对进度条进行估算
+        time_start = time()
+        op_attrNum = 0
+        for val in self.left_items:
+            if val[0] not in no_encrypted:
+                op_attrNum += 1
+        for val in self.right_items:
+            if val[0] not in encrypted:
+                op_attrNum += 1
+        cursor.execute('SELECT * FROM ' + cur_tb)
+        SumRowNum = cursor.rowcount
+        fin_flag = 0
+        self.processBar = pb_calc(time_start, op_attrNum, SumRowNum)
+        self.processBar.pb_signal.connect(self.update_pb)
+        self.processBar.start()
+        # 创建加解密函数
+        sql1 = "DROP FUNCTION IF EXISTS encrypt;"
+        sql2 = "DROP FUNCTION IF EXISTS decrypt;"
+        sql3 = "CREATE FUNCTION encrypt RETURNS STRING SONAME \"myudf.dll\";"
+        sql4 = "CREATE FUNCTION decrypt RETURNS STRING SONAME \"myudf.dll\";"
+        try:
+            cursor.execute(sql1)
+            cursor.execute(sql2)
+            cursor.execute(sql3)
+            cursor.execute(sql4)
+        except Exception as e:
+            db.rollback()
+            self.err_signal.emit(str(e))
+        else:
+            db.commit()
+        # print("加解密函数\n", sql)
+        # left_rows = self.left_tableWidget.rowCount()
+        # right_rows = self.right_tableWidget.rowCount()
+        # 读取表格上的数据，执行加解密操作
+        # 对新添加到左边表格的数据进行解密
+        for val in self.left_items:
+            name_ = val[0]
+            type_ = val[1]
+            if name_ not in no_encrypted:
+                name_new = name_ + "_NEW"
+                sql1 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_new + " " + type_ + " AFTER " + name_ + ";\n"
+                sql2 = "UPDATE " + cur_tb + " SET " + name_new + "=decrypt(CONVERT(" + name_ + ",CHAR));\n"
+                sql3 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_ + ";\n"
+                sql4 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_new + " " + name_ + " " + type_ + ";\n"
+                # print("解密\n", sql)
+                try:
+                    cursor.execute(sql1)
+                    cursor.execute(sql2)
+                    cursor.execute(sql3)
+                    cursor.execute(sql4)
+                except Exception as e:
+                    db.rollback()
+                    self.err_signal.emit(str(e))
+                else:
+                    db.commit()
+        # 对新添加到右边表格的数据进行加密并添加触发器
+        encrypt_list = []
+        sql1 = "DROP TRIGGER IF EXISTS insert_data;"
+        sql2 = "DROP TRIGGER IF EXISTS update_data;"
+        try:
+            cursor.execute(sql1)
+            cursor.execute(sql2)
+        except Exception as e:
+            db.rollback()
+            self.err_signal.emit(str(e))
+        else:
+            db.commit()
+        insert_trigger = "CREATE TRIGGER insert_data\n"
+        insert_trigger += "BEFORE INSERT ON " + cur_tb + " FOR EACH ROW BEGIN\n"
+        update_trigger = "CREATE TRIGGER update_data\n"
+        update_trigger += "BEFORE UPDATE ON " + cur_tb + " FOR EACH ROW BEGIN\n"
+        for val in self.right_items:
+            name_ = val[0]
+            type_ = val[1]
+            encrypt_list.append(name_)
+            if name_ not in encrypted:
+                # encrypt this attr
+                name_old = name_ + "_OLD"
+                sql1 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_ + " " + name_old + " " + type_ + ";"
+                sql2 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci AFTER " + name_old + ";"
+                sql3 = "ALTER TABLE " + cur_tb + " MODIFY COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci COMMENT 'en," + type_ + "';"
+                sql4 = "UPDATE " + cur_tb + " SET " + name_ + "=encrypt(CONVERT(" + name_old + ",CHAR));"
+                sql5 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_old + ";"
+                # print("加密\n", sql)
+                try:
+                    cursor.execute(sql1)
+                    cursor.execute(sql2)
+                    cursor.execute(sql3)
+                    cursor.execute(sql4)
+                    cursor.execute(sql5)
+                except Exception as e:
+                    db.rollback()
+                    self.err_signal.emit(str(e))
+                else:
+                    db.commit()
+            # self.pb_signal.emit(0.99)
+            # 添加触发器语句
+            insert_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\n"
+            update_trigger += "IF (OLD." + name_ + " != NEW." + name_ + ") THEN\n"
+            update_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\nEND IF;\n"
+        insert_trigger += "END"
+        update_trigger += "END"
+        # print("触发器\n", sql)
+        try:
+            cursor.execute(insert_trigger)
+            cursor.execute(update_trigger)
+        except Exception as e:
+            db.rollback()
+            self.err_signal.emit(str(e))
+        else:
+            db.commit()
+        # 创建视图
+        sql1 = "DROP VIEW IF EXISTS `" + cur_tb + "_view`;"
+        sql2 = "CREATE VIEW " + cur_tb + "_view AS\n SELECT "
+        flag = 0
+        for val in attr_list:
+            if flag:
+                sql2 += ","
+            flag = 1
+            if val in encrypt_list:
+                sql2 += "CONVERT(decrypt(CONVERT(" + val + ",CHAR)) USING utf8) " + val
+            else:
+                sql2 += val
+        sql2 += " FROM " + cur_tb + ";"
+        # print("视图\n", sql)
+        try:
+            cursor.execute(sql1)
+            cursor.execute(sql2)
+        except Exception as e:
+            db.rollback()
+            self.err_signal.emit(str(e))
+        else:
+            db.commit()
+        # time_end = time.time()
+        # print("time:", time_end - time_start)
+        # print(op_attrNum, SumRowNum)
+        fin_flag = 1
+        self.pb_signal.emit(1)
+        self.fin_signal.emit("操作完成!  ")
+
+    def update_pb(self,pb_val):
+        self.pb_signal.emit(pb_val)
+
+class pb_calc(QThread):
+    pb_signal = pyqtSignal(float)
+
+    def __init__(self,time_start,op_attrNum,SumRowNum):
+        super(pb_calc,self).__init__()
+        self.time_start = time_start
+        self.op_attrNum = op_attrNum
+        self.SumRowNum = SumRowNum
+
+    def run(self):
+        global fin_flag
+        guess_time = 0.00033*self.SumRowNum*self.op_attrNum+1.0536
+        percent = (time() - self.time_start) / guess_time
+        percent_old = percent
+        # str1 = str(percent)
+        while percent < 1.00:
+            percent = (time()-self.time_start)/guess_time
+            # str1 += ","+str(percent)
+            if percent-percent_old > 0.01 and not fin_flag:
+                percent_old = percent
+                self.pb_signal.emit(percent)
+                # print("fun:",percent)
+            sleep(0.01)
+        # print(str1)
 
 
 class existUkey(QThread):
