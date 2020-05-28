@@ -272,7 +272,7 @@ class data_operate(QThread):
             cursor.execute(sql4)
         except Exception as e:
             db.rollback()
-            self.err_signal.emit(str(e))
+            self.err_signal.emit("加解密函数创建失败！\n"+str(e))
         else:
             db.commit()
         # print("加解密函数\n", sql)
@@ -280,30 +280,42 @@ class data_operate(QThread):
         # right_rows = self.right_tableWidget.rowCount()
         # 读取表格上的数据，执行加解密操作
         # 对新添加到左边表格的数据进行解密
+        first_flag = True
         for val in self.left_items:
             name_ = val[0]
             type_ = val[1]
             if name_ not in no_encrypted:
                 name_new = name_ + "_NEW"
-                sql1 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_new + " " + type_ + " AFTER " + name_ + ";\n"
-                sql2 = "UPDATE " + cur_tb + " SET " + name_new + "=decrypt(CONVERT(" + name_ + ",CHAR));\n"
-                sql3 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_ + ";\n"
-                sql4 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_new + " " + name_ + " " + type_ + ";\n"
-                # print("解密\n", sql)
-                try:
-                    cursor.execute(sql1)
-                    cursor.execute(sql2)
-                    cursor.execute(sql3)
-                    cursor.execute(sql4)
-                except Exception as e:
-                    db.rollback()
-                    self.err_signal.emit(str(e))
+                if first_flag:
+                    first_flag = False
+                    sql1 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_new + " " + type_ + " AFTER " + name_
+                    sql2 = "UPDATE " + cur_tb + " SET " + name_new + "=decrypt(CONVERT(" + name_ + ",CHAR))"
+                    sql3 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_ + " ,CHANGE COLUMN " + name_new + " " + name_ + " " + type_
                 else:
-                    db.commit()
+                    sql1 += ",ADD COLUMN " + name_new + " " + type_ + " AFTER " + name_
+                    sql2 += "," + name_new + "=decrypt(CONVERT(" + name_ + ",CHAR))"
+                    sql3 += ",DROP COLUMN " + name_ + ",CHANGE COLUMN " + name_new + " " + name_ + " " + type_
+        sql1 += ";"
+        sql2 += ";"
+        sql3 += ";"
+        # print("解密\n")
+        # print(sql1,"\n",sql2,"\n",sql3)
+        if not first_flag:
+            try:
+                cursor.execute(sql1)
+                cursor.execute(sql2)
+                cursor.execute(sql3)
+            except Exception as e:
+                db.rollback()
+                self.err_signal.emit("解密操作失败！\n"+str(e))
+            else:
+                db.commit()
         # 对新添加到右边表格的数据进行加密并添加触发器
         encrypt_list = []
-        sql1 = "DROP TRIGGER IF EXISTS insert_data;"
-        sql2 = "DROP TRIGGER IF EXISTS update_data;"
+        sql1 = "DROP TRIGGER IF EXISTS insert_data;\n"
+        sql2 = "DROP TRIGGER IF EXISTS update_data;\n"
+        # print("删除触发器\n")
+        # print(sql)
         try:
             cursor.execute(sql1)
             cursor.execute(sql2)
@@ -316,6 +328,7 @@ class data_operate(QThread):
         insert_trigger += "BEFORE INSERT ON " + cur_tb + " FOR EACH ROW BEGIN\n"
         update_trigger = "CREATE TRIGGER update_data\n"
         update_trigger += "BEFORE UPDATE ON " + cur_tb + " FOR EACH ROW BEGIN\n"
+        first_flag = True
         for val in self.right_items:
             name_ = val[0]
             type_ = val[1]
@@ -323,23 +336,18 @@ class data_operate(QThread):
             if name_ not in encrypted:
                 # encrypt this attr
                 name_old = name_ + "_OLD"
-                sql1 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_ + " " + name_old + " " + type_ + ";"
-                sql2 = "ALTER TABLE " + cur_tb + " ADD COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci AFTER " + name_old + ";"
-                sql3 = "ALTER TABLE " + cur_tb + " MODIFY COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci COMMENT 'en," + type_ + "';"
-                sql4 = "UPDATE " + cur_tb + " SET " + name_ + "=encrypt(CONVERT(" + name_old + ",CHAR));"
-                sql5 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_old + ";"
-                # print("加密\n", sql)
-                try:
-                    cursor.execute(sql1)
-                    cursor.execute(sql2)
-                    cursor.execute(sql3)
-                    cursor.execute(sql4)
-                    cursor.execute(sql5)
-                except Exception as e:
-                    db.rollback()
-                    self.err_signal.emit(str(e))
+                if first_flag:
+                    first_flag = False
+                    sql1 = "ALTER TABLE " + cur_tb + " CHANGE COLUMN " + name_ + " " + name_old + " " + type_ + ",ADD COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci AFTER " + name_old
+                    sql2 = "ALTER TABLE " + cur_tb + " MODIFY COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci COMMENT 'en," + type_ + "'"
+                    sql3 = "UPDATE " + cur_tb + " SET " + name_ + "=encrypt(CONVERT(" + name_old + ",CHAR))"
+                    sql4 = "ALTER TABLE " + cur_tb + " DROP COLUMN " + name_old
                 else:
-                    db.commit()
+                    sql1 += ",CHANGE COLUMN " + name_ + " " + name_old + " " + type_ + ",ADD COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci AFTER " + name_old
+                    sql2 += ",MODIFY COLUMN " + name_ + " TEXT CHARACTER SET ascii COLLATE ascii_general_ci COMMENT 'en," + type_ + "'"
+                    sql3 += "," + name_ + "=encrypt(CONVERT(" + name_old + ",CHAR))"
+                    sql4 += ",DROP COLUMN " + name_old
+
             # self.pb_signal.emit(0.99)
             # 添加触发器语句
             insert_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\n"
@@ -347,13 +355,30 @@ class data_operate(QThread):
             update_trigger += "SET NEW." + name_ + "=encrypt(CONVERT(NEW." + name_ + ",CHAR));\nEND IF;\n"
         insert_trigger += "END"
         update_trigger += "END"
-        # print("触发器\n", sql)
+        # print("加密\n")
+        sql1 += ";"
+        sql2 += ";"
+        sql3 += ";"
+        sql4 += ";"
+        # print("触发器\n")
+        if not first_flag:
+            try:
+                cursor.execute(sql1)
+                cursor.execute(sql2)
+                cursor.execute(sql3)
+                cursor.execute(sql4)
+            except Exception as e:
+                db.rollback()
+                self.err_signal.emit("加密操作失败！\n"+str(e))
+            else:
+                db.commit()
+        # print("创建触发器")
         try:
             cursor.execute(insert_trigger)
             cursor.execute(update_trigger)
         except Exception as e:
             db.rollback()
-            self.err_signal.emit(str(e))
+            self.err_signal.emit("触发器创建失败！"+str(e))
         else:
             db.commit()
         # 创建视图
@@ -369,21 +394,25 @@ class data_operate(QThread):
             else:
                 sql2 += val
         sql2 += " FROM " + cur_tb + ";"
-        # print("视图\n", sql)
+        # print("视图\n")
         try:
             cursor.execute(sql1)
             cursor.execute(sql2)
         except Exception as e:
             db.rollback()
-            self.err_signal.emit(str(e))
+            self.err_signal.emit("视图创建失败！"+str(e))
         else:
             db.commit()
-        # time_end = time.time()
+        time_end = time()
         # print("time:", time_end - time_start)
         # print(op_attrNum, SumRowNum)
         fin_flag = 1
         self.pb_signal.emit(1)
-        self.fin_signal.emit("操作完成!  ")
+        use_time = time_end-time_start
+        # log = open("D:/log.txt","a")
+        # log.write("%.4f," % use_time)
+        # log.close()
+        self.fin_signal.emit("操作完成!  \n用时：%.4fs" % use_time)
 
     def update_pb(self,pb_val):
         self.pb_signal.emit(pb_val)
